@@ -286,6 +286,7 @@ class SVMAllocsManager {
     void trimUSMHostAllocCache();
     void trimUSMSharedAllocCache();
     void insertSVMAlloc(const SvmAllocationData &svmData);
+    void assignIdAndInsertSVMAlloc(SvmAllocationData &svmData);
     void removeSVMAlloc(const SvmAllocationData &svmData);
     void reinsertToAllocsForIndirectAccess(SvmAllocationData &svmData);
     void removeFromAllocsForIndirectAccess(SvmAllocationData &svmData);

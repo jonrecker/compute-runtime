@@ -1607,13 +1607,16 @@ void *MemoryManager::importFdHandle(Device *neoDevice,
     allocDataTmp->device = neoDevice;
     allocDataTmp->isImportedAllocation = true;
     alloc->setIsImported();
-    allocDataTmp->setAllocId(++svmAllocsManager->allocationsCounter);
     if (uncachedBias) {
         allocDataTmp->allocationFlagsProperty.flags.locallyUncachedResource = 1;
     }
 
     if (!basePointer) {
-        svmAllocsManager->insertSVMAlloc(allocData);
+        // Take the id and publish the allocation under one lock, so that a concurrent
+        // makeIndirectAllocationsResident() cannot observe the id before the allocation is in the map.
+        svmAllocsManager->assignIdAndInsertSVMAlloc(allocData);
+    } else {
+        allocDataTmp->setAllocId(++svmAllocsManager->allocationsCounter);
     }
     if (pAlloc) {
         *pAlloc = alloc;

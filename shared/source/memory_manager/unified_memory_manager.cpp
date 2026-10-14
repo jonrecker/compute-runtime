@@ -1479,6 +1479,19 @@ SVMAllocsManager::ContainerReadLockTypeRAIIHelper SVMAllocsManager::obtainReadCo
     return ContainerReadLockTypeRAIIHelper(*this);
 }
 
+void SVMAllocsManager::assignIdAndInsertSVMAlloc(SvmAllocationData &allocData) {
+    ContainerReadWriteLockType lock(mtx);
+    allocData.setAllocId(++this->allocationsCounter);
+    auto svmPtr = reinterpret_cast<void *>(allocData.gpuAllocations.getDefaultGraphicsAllocation()->getGpuAddressWithoutOffset());
+    this->svmAllocs.insert(svmPtr, allocData);
+    UNRECOVERABLE_IF(internalAllocationsMap.contains(allocData.getAllocId()));
+    for (auto alloc : allocData.gpuAllocations.getGraphicsAllocations()) {
+        if (alloc != nullptr) {
+            internalAllocationsMap.emplace(allocData.getAllocId(), alloc);
+        }
+    }
+}
+
 void SVMAllocsManager::insertSVMAlloc(void *svmPtr, const SvmAllocationData &allocData) {
     ContainerReadWriteLockType lock(mtx);
     this->svmAllocs.insert(svmPtr, allocData);
