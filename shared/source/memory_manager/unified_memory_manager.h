@@ -287,8 +287,9 @@ class SVMAllocsManager {
     void trimUSMSharedAllocCache();
     void insertSVMAlloc(const SvmAllocationData &svmData);
     void assignIdAndInsertSVMAlloc(SvmAllocationData &svmData);
+    void assignIdAndInsertSVMAlloc(void *ptr, SvmAllocationData &svmData);
     void removeSVMAlloc(const SvmAllocationData &svmData);
-    void reinsertToAllocsForIndirectAccess(SvmAllocationData &svmData);
+    void reassignIdAndReinsertToAllocsForIndirectAccess(SvmAllocationData &svmData);
     void removeFromAllocsForIndirectAccess(SvmAllocationData &svmData);
     size_t getNumAllocs() const { return svmAllocs.getNumAllocs(); }
     size_t getNumClaimableDeferFreeAllocs() { return this->getDeferFreeAllocCounts().claimable; }
@@ -361,6 +362,7 @@ class SVMAllocsManager {
     void initUsmSharedAllocationsCache(Device &device);
     void freeSVMData(SvmAllocationData *svmData);
     void insertSVMAlloc(void *ptr, const SvmAllocationData &allocData);
+    void insertSVMAllocLocked(void *ptr, const SvmAllocationData &allocData);
     void removeFromSvmAllocs(const SvmAllocationData &svmAllocData);
     void makeResidentForAllocationsWithId(uint32_t allocationId, CommandStreamReceiver &csr);
 

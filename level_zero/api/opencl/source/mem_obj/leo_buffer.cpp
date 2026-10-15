@@ -41,8 +41,7 @@ void Buffer::resetGraphicsAllocation(GraphicsAllocation *newGraphicsAllocation) 
     checkUsageAndReleaseOldAllocation(newGraphicsAllocation->getRootDeviceIndex());
 
     newAllocData.gpuAllocations.addAllocation(newGraphicsAllocation);
-    newAllocData.setAllocId(++context->getL0Object()->getDriverHandle()->getSvmAllocsManager()->allocationsCounter);
-    context->getL0Object()->getDriverHandle()->getSvmAllocsManager()->insertSVMAlloc(newAllocData);
+    context->getL0Object()->getDriverHandle()->getSvmAllocsManager()->assignIdAndInsertSVMAlloc(newAllocData);
 
     this->allocData = nullptr;
     this->usmPtr = reinterpret_cast<void *>(newGraphicsAllocation->getGpuAddress());
@@ -85,9 +84,7 @@ Buffer *Buffer::createSharedBuffer(Context *context, cl_mem_flags flags, Sharing
     allocData.size = multiGraphicsAllocation.getDefaultGraphicsAllocation()->getUnderlyingBufferSize();
     allocData.device = &context->getClDevice()->getDevice();
     allocData.isInternalAllocation = true;
-    allocData.setAllocId(++context->getL0Object()->getDriverHandle()->getSvmAllocsManager()->allocationsCounter);
-
-    context->getL0Object()->getDriverHandle()->getSvmAllocsManager()->insertSVMAlloc(allocData);
+    context->getL0Object()->getDriverHandle()->getSvmAllocsManager()->assignIdAndInsertSVMAlloc(allocData);
 
     auto memoryProperties = ClMemoryPropertiesHelper::createMemoryProperties(flags, 0, 0, &context->getClDevice()->getDevice());
     auto sharedBuffer = new Buffer(context,
@@ -154,8 +151,7 @@ void *Buffer::allocateWithHostPtr(Context *context, void *hostPtr, size_t size, 
     allocData.memoryType = InternalMemoryType::hostUnifiedMemory;
     allocData.allocationFlagsProperty.hostptr = castToUint64(hostPtr);
     allocData.device = nullptr;
-    allocData.setAllocId(++svmAllocsManager->allocationsCounter);
-    svmAllocsManager->insertSVMAlloc(allocData);
+    svmAllocsManager->assignIdAndInsertSVMAlloc(allocData);
 
     return reinterpret_cast<void *>(allocation->getGpuAddress());
 }

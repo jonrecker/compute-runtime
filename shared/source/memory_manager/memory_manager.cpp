@@ -1671,14 +1671,14 @@ void *MemoryManager::importFdHandles(Device *neoDevice,
     allocDataTmp->isImportedAllocation = true;
     alloc->setIsImported();
 
-    allocDataTmp->setAllocId(++svmAllocsManager->allocationsCounter);
-
     if (uncachedBias) {
         allocDataTmp->allocationFlagsProperty.flags.locallyUncachedResource = 1;
     }
 
     if (!basePtr) {
-        svmAllocsManager->insertSVMAlloc(allocData);
+        svmAllocsManager->assignIdAndInsertSVMAlloc(allocData);
+    } else {
+        allocDataTmp->setAllocId(++svmAllocsManager->allocationsCounter);
     }
 
     if (pAlloc) {

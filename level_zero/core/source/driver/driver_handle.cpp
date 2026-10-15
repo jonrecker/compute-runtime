@@ -899,9 +899,7 @@ std::pair<NEO::GraphicsAllocation *, void *> DriverHandle::importNTHandle(ze_dev
     allocData.isImportedAllocation = true;
     alloc->setIsImported();
 
-    allocData.setAllocId(++this->getSvmAllocsManager()->allocationsCounter);
-
-    this->getSvmAllocsManager()->insertSVMAlloc(allocData);
+    this->getSvmAllocsManager()->assignIdAndInsertSVMAlloc(allocData);
 
     return {alloc, reinterpret_cast<void *>(alloc->getGpuAddress())};
 }

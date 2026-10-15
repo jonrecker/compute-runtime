@@ -214,8 +214,7 @@ void *SVMAllocsManager::SvmAllocationCache::get(size_t size, const UnifiedMemory
                 }
             }
             if (requireUpdatingAllocsForIndirectAccess) {
-                allocationIter->svmData->setAllocId(++svmAllocsManager->allocationsCounter);
-                svmAllocsManager->reinsertToAllocsForIndirectAccess(*allocationIter->svmData);
+                svmAllocsManager->reassignIdAndReinsertToAllocsForIndirectAccess(*allocationIter->svmData);
             }
             allocations.erase(allocationIter);
             empty = allocations.empty();
@@ -526,10 +525,9 @@ void *SVMAllocsManager::createHostUnifiedMemoryAllocation(size_t size,
     allocData.allocationFlagsProperty = memoryProperties.allocationFlags;
     allocData.device = nullptr;
     allocData.pageSizeForAlignment = pageSizeForAlignment;
-    allocData.setAllocId(++this->allocationsCounter);
     allocData.ipcHandleTypeFlags = memoryProperties.ipcHandleTypeFlags;
 
-    insertSVMAlloc(usmPtr, allocData);
+    assignIdAndInsertSVMAlloc(usmPtr, allocData);
 
     return usmPtr;
 }
@@ -621,13 +619,12 @@ void *SVMAllocsManager::createUnifiedMemoryAllocation(size_t size,
     allocData.memoryType = memoryProperties.memoryType;
     allocData.allocationFlagsProperty = memoryProperties.allocationFlags;
     allocData.device = memoryProperties.device;
-    allocData.setAllocId(++this->allocationsCounter);
     allocData.isInternalAllocation = memoryProperties.isInternalAllocation;
     allocData.isExternalMemmapAllocation = memoryProperties.isExternalMemmapAllocation;
     allocData.ipcHandleTypeFlags = memoryProperties.ipcHandleTypeFlags;
 
     auto retPtr = reinterpret_cast<void *>(unifiedMemoryAllocation->getGpuAddress());
-    insertSVMAlloc(retPtr, allocData);
+    assignIdAndInsertSVMAlloc(retPtr, allocData);
     UNRECOVERABLE_IF(useExternalHostPtrForCpu && (externalPtr != retPtr));
 
     return retPtr;
@@ -744,11 +741,10 @@ void *SVMAllocsManager::createUnifiedKmdMigratedAllocation(size_t size, const Sv
     allocData.device = unifiedMemoryProperties.device;
     allocData.size = size;
     allocData.pageSizeForAlignment = pageSizeForAlignment;
-    allocData.setAllocId(++this->allocationsCounter);
     allocData.ipcHandleTypeFlags = unifiedMemoryProperties.ipcHandleTypeFlags;
 
     auto retPtr = allocationGpu->getUnderlyingBuffer();
-    insertSVMAlloc(retPtr, allocData);
+    assignIdAndInsertSVMAlloc(retPtr, allocData);
     return retPtr;
 }
 
@@ -757,9 +753,10 @@ void SVMAllocsManager::setUnifiedAllocationProperties(GraphicsAllocation *alloca
     allocation->setCoherent(svmProperties.coherent);
 }
 
-void SVMAllocsManager::reinsertToAllocsForIndirectAccess(SvmAllocationData &svmData) {
+void SVMAllocsManager::reassignIdAndReinsertToAllocsForIndirectAccess(SvmAllocationData &svmData) {
     std::unique_lock<std::mutex> lockForIndirect(mtxForIndirectAccess);
     ContainerReadWriteLockType lock(mtx);
+    svmData.setAllocId(++this->allocationsCounter);
     for (auto alloc : svmData.gpuAllocations.getGraphicsAllocations()) {
         OPTIONAL_UNRECOVERABLE_IF(nullptr == alloc);
         internalAllocationsMap.emplace(svmData.getAllocId(), alloc);
@@ -1092,9 +1089,8 @@ void *SVMAllocsManager::createZeroCopySvmAllocation(size_t size, const SvmAlloca
         allocation->setCoherent(svmProperties.coherent);
     }
     allocData.size = size;
-    allocData.setAllocId(++this->allocationsCounter);
 
-    insertSVMAlloc(usmPtr, allocData);
+    assignIdAndInsertSVMAlloc(usmPtr, allocData);
     return usmPtr;
 }
 
@@ -1165,10 +1161,9 @@ void *SVMAllocsManager::createUnifiedAllocationWithDeviceStorage(size_t size, co
     allocData.device = unifiedMemoryProperties.device;
     allocData.pageSizeForAlignment = effectiveSvmCpuAlignment;
     allocData.size = size;
-    allocData.setAllocId(++this->allocationsCounter);
     allocData.ipcHandleTypeFlags = unifiedMemoryProperties.ipcHandleTypeFlags;
 
-    insertSVMAlloc(svmPtr, allocData);
+    assignIdAndInsertSVMAlloc(svmPtr, allocData);
     return svmPtr;
 }
 
@@ -1480,20 +1475,21 @@ SVMAllocsManager::ContainerReadLockTypeRAIIHelper SVMAllocsManager::obtainReadCo
 }
 
 void SVMAllocsManager::assignIdAndInsertSVMAlloc(SvmAllocationData &allocData) {
+    assignIdAndInsertSVMAlloc(reinterpret_cast<void *>(allocData.gpuAllocations.getDefaultGraphicsAllocation()->getGpuAddressWithoutOffset()), allocData);
+}
+
+void SVMAllocsManager::assignIdAndInsertSVMAlloc(void *svmPtr, SvmAllocationData &allocData) {
     ContainerReadWriteLockType lock(mtx);
     allocData.setAllocId(++this->allocationsCounter);
-    auto svmPtr = reinterpret_cast<void *>(allocData.gpuAllocations.getDefaultGraphicsAllocation()->getGpuAddressWithoutOffset());
-    this->svmAllocs.insert(svmPtr, allocData);
-    UNRECOVERABLE_IF(internalAllocationsMap.contains(allocData.getAllocId()));
-    for (auto alloc : allocData.gpuAllocations.getGraphicsAllocations()) {
-        if (alloc != nullptr) {
-            internalAllocationsMap.emplace(allocData.getAllocId(), alloc);
-        }
-    }
+    insertSVMAllocLocked(svmPtr, allocData);
 }
 
 void SVMAllocsManager::insertSVMAlloc(void *svmPtr, const SvmAllocationData &allocData) {
     ContainerReadWriteLockType lock(mtx);
+    insertSVMAllocLocked(svmPtr, allocData);
+}
+
+void SVMAllocsManager::insertSVMAllocLocked(void *svmPtr, const SvmAllocationData &allocData) {
     this->svmAllocs.insert(svmPtr, allocData);
     UNRECOVERABLE_IF(internalAllocationsMap.contains(allocData.getAllocId()));
     for (auto alloc : allocData.gpuAllocations.getGraphicsAllocations()) {

@@ -1690,8 +1690,7 @@ ze_result_t Context::openIpcRangeHandle(ze_device_handle_t hDevice,
         allocDataInternal.device = neoDevice;
         allocDataInternal.isImportedAllocation = true;
         rangeAllocation->setIsImported();
-        allocDataInternal.setAllocId(++this->driverHandle->svmAllocsManager->allocationsCounter);
-        this->driverHandle->getSvmAllocsManager()->insertSVMAlloc(allocDataInternal);
+        this->driverHandle->getSvmAllocsManager()->assignIdAndInsertSVMAlloc(allocDataInternal);
         *pptr = reinterpret_cast<void *>(rangeAllocation->getGpuAddress());
     } else {
         *pptr = this->driverHandle->importFdHandles(neoDevice, flags, handles, nullptr, &rangeAllocation, allocDataInternal, false, physicalOffsets);
@@ -2522,7 +2521,6 @@ ze_result_t Context::mapVirtualMem(const void *ptr,
         allocData.device = allocationNode->device;
         allocData.size = size;
         allocData.pageSizeForAlignment = MemoryConstants::pageSize64k;
-        allocData.setAllocId(++this->driverHandle->svmAllocsManager->allocationsCounter);
         allocData.memoryType = InternalMemoryType::reservedDeviceMemory;
         allocData.virtualReservationData = virtualMemoryReservation;
         allocData.ipcHandleTypeFlags = allocationNode->ipcHandleTypeFlags;
@@ -2534,7 +2532,7 @@ ze_result_t Context::mapVirtualMem(const void *ptr,
         mappedRange->physicalHandle = static_cast<void *>(hPhysicalMemory);
         mappedRange->mappedPhysicalOffset = offset;
         virtualMemoryReservation->mappedAllocations.emplace(const_cast<void *>(ptr), mappedRange);
-        this->driverHandle->getSvmAllocsManager()->insertSVMAlloc(allocData);
+        this->driverHandle->getSvmAllocsManager()->assignIdAndInsertSVMAlloc(allocData);
         NEO::MemoryOperationsHandler *memoryOperationsIface = allocationNode->device->getRootDeviceEnvironment().memoryOperationsInterface.get();
         auto success = memoryOperationsIface->makeResident(allocationNode->device, ArrayRef<NEO::GraphicsAllocation *>(&allocationNode->allocation, 1), false, true);
         ze_result_t res = changeMemoryOperationStatusToL0ResultType(success);
@@ -2569,7 +2567,6 @@ ze_result_t Context::mapVirtualMem(const void *ptr,
         allocData.device = nullptr;
         allocData.size = size;
         allocData.pageSizeForAlignment = MemoryConstants::pageSize2M;
-        allocData.setAllocId(++this->driverHandle->svmAllocsManager->allocationsCounter);
         allocData.memoryType = InternalMemoryType::reservedHostMemory;
         allocData.virtualReservationData = virtualMemoryReservation;
         allocData.ipcHandleTypeFlags = allocationNode->ipcHandleTypeFlags;
@@ -2582,7 +2579,7 @@ ze_result_t Context::mapVirtualMem(const void *ptr,
         mappedRange->physicalHandle = static_cast<void *>(hPhysicalMemory);
         mappedRange->mappedPhysicalOffset = offset;
         virtualMemoryReservation->mappedAllocations.emplace(const_cast<void *>(ptr), mappedRange);
-        this->driverHandle->getSvmAllocsManager()->insertSVMAlloc(allocData);
+        this->driverHandle->getSvmAllocsManager()->assignIdAndInsertSVMAlloc(allocData);
         return ZE_RESULT_SUCCESS;
     }
 }
