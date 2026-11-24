@@ -229,7 +229,8 @@ class SVMAllocsManager {
     void trimUSMDeviceAllocCache();
     void trimUSMHostAllocCache();
     void trimUSMSharedAllocCache();
-    void insertSVMAlloc(const SvmAllocationData &svmData);
+    MOCKABLE_VIRTUAL void insertSVMAlloc(const SvmAllocationData &svmData);
+    MOCKABLE_VIRTUAL void insertSVMAllocAfterImport(SvmAllocationData &svmData);
     void removeSVMAlloc(const SvmAllocationData &svmData);
     void reinsertToAllocsForIndirectAccess(SvmAllocationData &svmData);
     void removeFromAllocsForIndirectAccess(SvmAllocationData &svmData);
@@ -308,6 +309,7 @@ class SVMAllocsManager {
     void initUsmSharedAllocationsCache(Device &device);
     void freeSVMData(SvmAllocationData *svmData);
     void insertSVMAlloc(void *ptr, const SvmAllocationData &allocData);
+    void insertSVMAllocLocked(void *ptr, const SvmAllocationData &allocData);
     void removeFromSvmAllocs(const SvmAllocationData &svmAllocData);
     void makeResidentForAllocationsWithId(uint32_t allocationId, CommandStreamReceiver &csr);
 

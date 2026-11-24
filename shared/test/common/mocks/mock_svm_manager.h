@@ -66,6 +66,22 @@ struct MockSVMAllocsManager : public SVMAllocsManager {
     std::atomic<void *> freeSVMAllocImplLastPtr{nullptr};
     std::atomic<FreePolicyType> freeSVMAllocImplLastFreePolicy{FreePolicyType::none};
 
+    void insertSVMAlloc(const SvmAllocationData &svmData) override {
+        if (beforeInsertCallback) {
+            beforeInsertCallback();
+        }
+        SVMAllocsManager::insertSVMAlloc(svmData);
+    }
+
+    void insertSVMAllocAfterImport(SvmAllocationData &svmData) override {
+        if (beforeInsertCallback) {
+            beforeInsertCallback();
+        }
+        SVMAllocsManager::insertSVMAllocAfterImport(svmData);
+    }
+
+    std::function<void()> beforeInsertCallback{};
+
     void trimUSMAllocCaches() override {
         trimUSMAllocCachesCalled++;
         SVMAllocsManager::trimUSMAllocCaches();

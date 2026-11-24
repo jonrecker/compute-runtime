@@ -7,6 +7,7 @@
 
 #include "shared/source/gmm_helper/gmm_helper.h"
 #include "shared/source/memory_manager/gfx_partition.h"
+#include "shared/source/memory_manager/unified_memory_manager.h"
 #include "shared/source/os_interface/linux/drm_allocation.h"
 #include "shared/source/os_interface/linux/drm_buffer_object.h"
 #include "shared/source/os_interface/linux/drm_fabric.h"
@@ -16,12 +17,16 @@
 #include "shared/source/os_interface/linux/memory_info.h"
 #include "shared/test/common/libult/linux/drm_mock.h"
 #include "shared/test/common/mocks/linux/mock_drm_allocation.h"
+#include "shared/test/common/mocks/mock_command_stream_receiver.h"
 #include "shared/test/common/mocks/mock_device.h"
 #include "shared/test/common/mocks/mock_driver_model.h"
+#include "shared/test/common/mocks/mock_svm_manager.h"
 #include "shared/test/common/mocks/ult_device_factory.h"
+#include "shared/test/common/test_macros/test.h"
 
 #include "level_zero/core/source/context/context.h"
 #include "level_zero/core/source/device/device.h"
+#include "level_zero/core/test/unit_tests/fixtures/device_fixture.h"
 #include "level_zero/core/test/unit_tests/fixtures/memory_ipc_fixture.h"
 #include "level_zero/core/test/unit_tests/mocks/mock_event.h"
 
@@ -1107,6 +1112,58 @@ TEST_F(MemoryExportImportImplicitScalingTest,
 
     result = context->freeMem(ptr);
     EXPECT_EQ(ZE_RESULT_SUCCESS, result);
+}
+
+struct ContextImportTakesIdBeforeInsertMock : public L0::Context {
+    using L0::Context::Context;
+
+    // as the real import (MemoryManager::importFdHandle): the id is taken here, the caller inserts later
+    std::pair<NEO::GraphicsAllocation *, void *> importMemHandle(ze_device_handle_t hDevice, uint64_t handle, NEO::AllocationType allocationType, bool isHostIpcAllocation, unsigned int processId, ze_ipc_memory_flags_t flags, void *reservedHandleData, bool compressedMemory, bool isOpaqueHandle, uint64_t physicalOffset, NEO::SvmAllocationData &importedAllocData) override {
+        auto neoDevice = Device::fromHandle(hDevice)->getNEODevice();
+        auto alloc = driverHandle->getMemoryManager()->allocateGraphicsMemoryWithProperties({neoDevice->getRootDeviceIndex(), MemoryConstants::pageSize, allocationType, neoDevice->getDeviceBitfield()});
+        importedAllocData.gpuAllocations.addAllocation(alloc);
+        importedAllocData.size = alloc->getUnderlyingBufferSize();
+        importedAllocData.memoryType = InternalMemoryType::deviceUnifiedMemory;
+        importedAllocData.device = neoDevice;
+        importedAllocData.isImportedAllocation = true;
+        importedAllocData.setAllocId(++driverHandle->getSvmAllocsManager()->allocationsCounter);
+        return {alloc, reinterpret_cast<void *>(alloc->getGpuAddress())};
+    }
+};
+
+using MemoryImportResidencyTest = Test<DeviceFixture>;
+
+TEST_F(MemoryImportResidencyTest, givenIndirectResidencyScanBeforeInsertWhenImportingDmaBufWithAllocDeviceMemThenNextScanMakesImportResident) {
+    MockSVMAllocsManager mockSvmAllocsManager(driverHandle->getMemoryManager());
+    VariableBackup<NEO::SVMAllocsManager *> svmAllocsManagerBackup(&driverHandle->svmAllocsManager, &mockSvmAllocsManager);
+
+    ContextImportTakesIdBeforeInsertMock importContext(driverHandle.get());
+    importContext.getDevices().insert(std::make_pair(device->getRootDeviceIndex(), device->toHandle()));
+    importContext.rootDeviceIndices.pushUnique(neoDevice->getRootDeviceIndex());
+    importContext.deviceBitfields.insert({neoDevice->getRootDeviceIndex(), neoDevice->getDeviceBitfield()});
+
+    MockCommandStreamReceiver csr(*neoDevice->getExecutionEnvironment(), neoDevice->getRootDeviceIndex(), neoDevice->getDeviceBitfield());
+    csr.setupContext(*neoDevice->getDefaultEngine().osContext);
+
+    // a submit on another thread scans for indirect allocations while the import is in progress
+    mockSvmAllocsManager.beforeInsertCallback = [&]() { mockSvmAllocsManager.makeIndirectAllocationsResident(csr, 1u); };
+
+    ze_external_memory_import_fd_t importDesc = {ZE_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMPORT_FD};
+    importDesc.flags = ZE_EXTERNAL_MEMORY_TYPE_FLAG_DMA_BUF;
+    importDesc.fd = 42;
+    ze_device_mem_alloc_desc_t deviceDesc = {ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC, &importDesc};
+    void *ptr = nullptr;
+    EXPECT_EQ(ZE_RESULT_SUCCESS, importContext.allocDeviceMem(device->toHandle(), &deviceDesc, MemoryConstants::pageSize, 0u, &ptr));
+    ASSERT_NE(nullptr, ptr);
+    mockSvmAllocsManager.beforeInsertCallback = nullptr;
+
+    auto allocData = mockSvmAllocsManager.getSVMAlloc(ptr);
+    ASSERT_NE(nullptr, allocData);
+    auto importedAlloc = allocData->gpuAllocations.getDefaultGraphicsAllocation();
+    mockSvmAllocsManager.makeIndirectAllocationsResident(csr, 2u);
+    EXPECT_TRUE(importedAlloc->isResident(csr.getOsContext().getContextId()));
+
+    EXPECT_EQ(ZE_RESULT_SUCCESS, importContext.freeMem(ptr));
 }
 
 } // namespace ult

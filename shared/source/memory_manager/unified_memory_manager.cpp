@@ -866,6 +866,17 @@ void SVMAllocsManager::insertSVMAlloc(const SvmAllocationData &svmAllocData) {
     insertSVMAlloc(reinterpret_cast<void *>(svmAllocData.gpuAllocations.getDefaultGraphicsAllocation()->getGpuAddressWithoutOffset()), svmAllocData);
 }
 
+void SVMAllocsManager::insertSVMAllocAfterImport(SvmAllocationData &svmAllocData) {
+    // The import took the id before this insert. If makeIndirectAllocationsResident() scanned
+    // in between, it went past the id while the allocation was not in internalAllocationsMap, and
+    // would never come back to it. Take a new id then; the check is exact under the scan's lock.
+    ContainerReadWriteLockType lock(mtx);
+    if (isAllocIdScannedForIndirectAccess(svmAllocData.getAllocId())) {
+        svmAllocData.setAllocId(++this->allocationsCounter);
+    }
+    insertSVMAllocLocked(reinterpret_cast<void *>(svmAllocData.gpuAllocations.getDefaultGraphicsAllocation()->getGpuAddressWithoutOffset()), svmAllocData);
+}
+
 void SVMAllocsManager::removeFromSvmAllocs(const SvmAllocationData &svmAllocData) {
     auto graphicsAllocation = svmAllocData.gpuAllocations.getDefaultGraphicsAllocation();
     const auto removed = svmAllocs.remove(reinterpret_cast<void *>(graphicsAllocation->getGpuAddressWithoutOffset()));
@@ -1585,6 +1596,10 @@ SVMAllocsManager::ContainerReadLockTypeRAIIHelper SVMAllocsManager::obtainReadCo
 
 void SVMAllocsManager::insertSVMAlloc(void *svmPtr, const SvmAllocationData &allocData) {
     ContainerReadWriteLockType lock(mtx);
+    insertSVMAllocLocked(svmPtr, allocData);
+}
+
+void SVMAllocsManager::insertSVMAllocLocked(void *svmPtr, const SvmAllocationData &allocData) {
     this->svmAllocs.insert(svmPtr, allocData);
     UNRECOVERABLE_IF(internalAllocationsMap.contains(allocData.getAllocId()));
     for (auto alloc : allocData.gpuAllocations.getGraphicsAllocations()) {

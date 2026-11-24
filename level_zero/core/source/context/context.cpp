@@ -928,7 +928,8 @@ std::pair<NEO::GraphicsAllocation *, void *> Context::getMemHandlePtr(ze_device_
     NEO::SvmAllocationData importedAllocData(Device::fromHandle(hDevice)->getRootDeviceIndex());
     auto imported = importMemHandle(hDevice, handle, allocationType, isHostIpcAllocation, processId, flags, reservedHandleData, compressedMemory, isOpaqueHandle, physicalOffset, importedAllocData);
     if (imported.first != nullptr) {
-        this->driverHandle->getSvmAllocsManager()->insertSVMAlloc(importedAllocData);
+        // the id was taken by the import, see insertSVMAllocAfterImport()
+        this->driverHandle->getSvmAllocsManager()->insertSVMAllocAfterImport(importedAllocData);
     }
     return imported;
 }

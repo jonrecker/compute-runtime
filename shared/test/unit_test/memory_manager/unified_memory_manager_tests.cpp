@@ -12,6 +12,7 @@
 #include "shared/test/common/helpers/debug_manager_state_restore.h"
 #include "shared/test/common/mocks/mock_command_stream_receiver.h"
 #include "shared/test/common/mocks/mock_device.h"
+#include "shared/test/common/mocks/mock_graphics_allocation.h"
 #include "shared/test/common/mocks/mock_memory_manager.h"
 #include "shared/test/common/mocks/mock_svm_manager.h"
 #include "shared/test/common/mocks/ult_device_factory.h"
@@ -942,6 +943,45 @@ TEST_F(SVMLocalMemoryAllocatorTest, givenIndirectAllocationsMadeResidentWhenCsrI
 
     svmManager->freeSVMAlloc(ptr);
     svmManager->freeSVMAlloc(ptr2);
+}
+
+TEST_F(SVMLocalMemoryAllocatorTest, givenImportedAllocationWhenInsertingAfterImportThenIdIsReplacedOnlyIfAScanPassedIt) {
+    std::unique_ptr<UltDeviceFactory> deviceFactory(new UltDeviceFactory(1, 2));
+    auto device = deviceFactory->rootDevices[0];
+    auto svmManager = std::make_unique<MockSVMAllocsManager>(device->getMemoryManager());
+    auto csr = std::make_unique<MockCommandStreamReceiver>(*device->getExecutionEnvironment(), device->getRootDeviceIndex(), device->getDeviceBitfield());
+    csr->setupContext(*device->getDefaultEngine().osContext);
+    const auto contextId = csr->getOsContext().getContextId();
+
+    MockGraphicsAllocation notScannedAlloc(0u, reinterpret_cast<void *>(0x10000), MemoryConstants::pageSize);
+    SvmAllocationData notScanned(0u);
+    notScanned.gpuAllocations.addAllocation(&notScannedAlloc);
+    notScanned.memoryType = InternalMemoryType::deviceUnifiedMemory;
+    notScanned.setAllocId(++svmManager->allocationsCounter);
+    const auto notScannedId = notScanned.getAllocId();
+    svmManager->insertSVMAllocAfterImport(notScanned);
+    EXPECT_EQ(notScannedId, notScanned.getAllocId());
+    EXPECT_EQ(notScannedId, svmManager->allocationsCounter.load());
+
+    MockGraphicsAllocation scannedAlloc(0u, reinterpret_cast<void *>(0x20000), MemoryConstants::pageSize);
+    SvmAllocationData scanned(0u);
+    scanned.gpuAllocations.addAllocation(&scannedAlloc);
+    scanned.memoryType = InternalMemoryType::deviceUnifiedMemory;
+    scanned.setAllocId(++svmManager->allocationsCounter);
+    const auto scannedId = scanned.getAllocId();
+    svmManager->makeIndirectAllocationsResident(*csr, 1u);
+    EXPECT_TRUE(notScannedAlloc.isResident(contextId));
+    EXPECT_FALSE(scannedAlloc.isResident(contextId));
+
+    svmManager->insertSVMAllocAfterImport(scanned);
+    EXPECT_LT(scannedId, scanned.getAllocId());
+    EXPECT_EQ(scanned.getAllocId(), svmManager->allocationsCounter.load());
+    EXPECT_TRUE(svmManager->internalAllocationsMap.contains(scanned.getAllocId()));
+    svmManager->makeIndirectAllocationsResident(*csr, 2u);
+    EXPECT_TRUE(scannedAlloc.isResident(contextId));
+
+    svmManager->removeSVMAlloc(notScanned);
+    svmManager->removeSVMAlloc(scanned);
 }
 
 TEST_F(SVMLocalMemoryAllocatorTest, givenLocalMemoryEnabledAndCompressionEnabledThenDeviceSideSharedUsmIsCompressed) {
